@@ -245,6 +245,26 @@ class TestScriptPromptOptions(unittest.TestCase):
         self.assertIn("A beautiful day at the", result)
         self.assertIn("10% of your income", result)
 
+    def test_generate_script_keeps_parenthesized_code_and_math(self):
+        """Stage directions like "(pause)" are dropped, but code such as
+        "n & (n - 1)" must survive or the narration loses its meaning."""
+
+        def fake_generate_response(prompt):
+            return (
+                "(upbeat music) A number is a power of two when n & (n - 1) equals zero. "
+                "Count bits with (x & 1) in a loop (pause) until x is zero."
+            )
+
+        with patch.object(
+            llm, "_generate_response", side_effect=fake_generate_response
+        ):
+            result = llm.generate_script(video_subject="bit tricks", language="en-US")
+
+        self.assertIn("n & (n - 1) equals zero", result)
+        self.assertIn("(x & 1)", result)
+        self.assertNotIn("upbeat music", result)
+        self.assertNotIn("pause", result)
+
     def test_generate_terms_can_request_script_ordered_keywords(self):
         """
         Matching materials in script order relies on the LLM returning ordered keywords.

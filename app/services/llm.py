@@ -999,7 +999,15 @@ def generate_script(
         # group is removed independently; the greedy form would eat all text
         # between the first opener and the last closer on the same line.
         response = re.sub(r"\[.*?\]", "", response)
-        response = re.sub(r"\(.*?\)", "", response)
+        # Keep parenthesized math/code such as "(n - 1)" or "(x & 1)"; only drop
+        # stage directions like "(pause)" or "(upbeat music)".
+        response = re.sub(
+            r"\(.*?\)",
+            lambda match: match.group(0)
+            if re.search(r"\d|[-+*/%&|^<>=~]", match.group(0))
+            else "",
+            response,
+        )
 
         # Split the script into paragraphs
         paragraphs = response.split("\n\n")
