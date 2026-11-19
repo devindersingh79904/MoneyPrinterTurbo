@@ -45,3 +45,6 @@ htmlcov/
 
 # Claude Code subscription token (read automatically by docker compose); never commit it
 .env
+local_clips/
+raw_recordings/
+storage/services.pid
