@@ -981,6 +981,8 @@ def generate_script(
         # Remove emphasis and heading markers without changing inline names
         # or musical notes such as C#, F# and G#.
         response = response.replace("*", "")
+        # Inline-code backticks would be read aloud / shown in subtitles.
+        response = response.replace("`", "")
         response = re.sub(
             r"(?m)^[ \t]{0,3}#{1,6}[ \t]+(.*?)[ \t]*$",
             lambda match: re.sub(r"[ \t]+#+[ \t]*$", "", match.group(1)),

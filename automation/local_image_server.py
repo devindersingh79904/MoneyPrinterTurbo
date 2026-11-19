@@ -79,10 +79,14 @@ below; each search term marks one shot, in order. For EACH term return:
      is added separately). No unrelated people or street scenes.
    - One consistent style across all shots that suits the topic (e.g. "sleek 3D render, dark
      background, neon blue and orange glow" for tech, "photorealistic, natural light" for everyday).
-2. "text": the on-screen text for that shot, exactly as a teacher would write it on the board:
-   code, formula, binary example or a 2-5 word key phrase taken from the script. At most 2 lines
-   (separate with \\n), each at most 22 characters. Use real code when the script mentions it,
-   e.g. "n & (n - 1) == 0", "1000 & 0111\\n= 0000", "bin(n).count('1')". Must be correct.
+2. "text": the on-screen text for that shot, exactly as a teacher would write it on the board
+   while saying that part of the script. At most 2 lines (separate with \\n), each at most 22
+   characters. Must be correct.
+   - For technical topics PREFER code, a formula or a worked example over words, e.g.
+     "n & (n - 1) == 0", "1000 & 0111\\n= 0000", "bin(5).count('1')\\n# 2", "n &= n - 1",
+     "5 = 101\\n2 bits set", "O(k), k = set bits".
+   - Only use a 2-5 word key phrase when there is nothing concrete to show (intro, outro,
+     non-technical topics). Never just repeat the search term.
 
 Reply with JSON only: {{"shots": [{{"prompt": "...", "text": "..."}}, ...]}} with exactly
 {len(terms)} entries, same order as the search terms.

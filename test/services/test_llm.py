@@ -252,7 +252,8 @@ class TestScriptPromptOptions(unittest.TestCase):
         def fake_generate_response(prompt):
             return (
                 "(upbeat music) A number is a power of two when n & (n - 1) equals zero. "
-                "Count bits with (x & 1) in a loop (pause) until x is zero."
+                "Count bits with (x & 1) in a loop (pause) until x is zero, "
+                "or use Python's `bin` with `count('1')`."
             )
 
         with patch.object(
@@ -264,6 +265,8 @@ class TestScriptPromptOptions(unittest.TestCase):
         self.assertIn("(x & 1)", result)
         self.assertNotIn("upbeat music", result)
         self.assertNotIn("pause", result)
+        self.assertNotIn("`", result)
+        self.assertIn("bin with count('1')", result)
 
     def test_generate_terms_can_request_script_ordered_keywords(self):
         """
