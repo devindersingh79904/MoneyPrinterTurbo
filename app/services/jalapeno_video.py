@@ -1,4 +1,4 @@
-"""Jalapeno Cloud 视频配置；复用 Seedance 的异步任务与付费重试边界。"""
+"""Jalapeno Cloud video config; reuses Seedance's async task and paid-retry boundaries."""
 
 import math
 import os
@@ -18,7 +18,8 @@ DEFAULT_RESOLUTION = "480p"
 TASKS_PATH = "/contents/generations/tasks"
 DEFAULT_TASKS_URL = DEFAULT_BASE_URL + TASKS_PATH
 
-# 同协议错误保留远端任务 ID，由任务编排层按素材来源归属恢复信息。
+# Protocol errors keep the remote task ID; the task orchestration layer recovers the
+# info according to the material source.
 JalapenoVideoError = seedance.VolcEngineSeedanceError
 
 
@@ -44,7 +45,7 @@ def _bounded_seconds(values, suffix, default, minimum, maximum):
 
 
 def endpoint(settings: Mapping | None = None) -> seedance.SeedanceEndpoint:
-    """一次性校验并解析提交参数，非法地址在配音和付费提交前报错。"""
+    """Validate and parse submit params once; bad URLs fail before voiceover and paid submission."""
     values = config.app if settings is None else settings
     key = get_api_key(values)
     if not key:
@@ -56,7 +57,8 @@ def endpoint(settings: Mapping | None = None) -> seedance.SeedanceEndpoint:
     )
     try:
         parts = urlsplit(base)
-        # urlsplit 不会主动校验端口；这里读取一次，避免配音后才发现地址非法。
+        # urlsplit does not validate the port; read it once here so an invalid URL is
+        # caught before the voiceover has already been generated.
         parts.port
     except ValueError as exc:
         raise JalapenoVideoError("Jalapeno Cloud video Base URL is invalid") from exc
@@ -71,7 +73,8 @@ def endpoint(settings: Mapping | None = None) -> seedance.SeedanceEndpoint:
         raise JalapenoVideoError(
             "Jalapeno Cloud video Base URL must be an HTTP(S) URL without credentials or query parameters"
         )
-    # 同时接受 Base URL 和活动页示例中的完整任务地址，保证只拼接一次路径。
+    # Accept both a base URL and the full task URL from the campaign page example, and
+    # make sure the path is appended only once.
     tasks_url = base if parts.path.endswith(TASKS_PATH) else base + TASKS_PATH
     model = str(values.get("jalapeno_video_model", "") or DEFAULT_MODEL).strip()
     if not model or len(model) > 200:

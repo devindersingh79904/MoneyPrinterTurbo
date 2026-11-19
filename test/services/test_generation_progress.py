@@ -1,4 +1,4 @@
-"""验证长任务可观测性、跨线程隔离和重复提交的真实调度边界。"""
+"""Verify long-task observability, cross-thread isolation and the real scheduling boundaries for duplicate submissions."""
 
 import threading
 import time
@@ -95,7 +95,7 @@ def test_progress_never_publishes_url_or_arbitrary_remote_status(isolated_jobs):
 
 @pytest.mark.parametrize("provider", ["jalapeno", "volcengine_seedance", "ofox", "muapi", "metaso_minimax", "infistar", "wavespeed"])
 def test_provider_pollers_publish_real_http_retry_and_completion(isolated_jobs, monkeypatch, provider):
-    """真实本地 HTTP 查询验证协议接入；与外部服务实测分开计数。"""
+    """Real local HTTP polling verifies the protocol integration; counted separately from live external-service tests."""
     from app.services import volcengine_seedance, ofox, muapi, metaso_minimax, infistar_video, material
 
     states = ["pending" if provider == "ofox" else "queued", "in_progress" if provider == "ofox" else "processing" if provider == "muapi" else "running", None,
@@ -159,7 +159,7 @@ def test_provider_pollers_publish_real_http_retry_and_completion(isolated_jobs, 
     phases = [a["phase"] for a in activities]
     assert "remote_queued" in phases
     assert "generating" in phases
-    assert phases.count("checking") >= 2  # 首次查询及 503 后重查。
+    assert phases.count("checking") >= 2  # The first poll plus the re-poll after the 503.
     assert phases[-1] == "generated"
     assert activities[-1]["provider"] == provider
 
@@ -193,7 +193,7 @@ def test_simultaneous_identical_submissions_start_only_one_real_worker(isolated_
         while webui_task._active_submissions and time.monotonic() < deadline:
             time.sleep(0.01)
     assert not webui_task._active_submissions
-    # 完成之后同样的内容可以有意重新生成，不会永久去重。
+    # After completion the same content can be intentionally regenerated; dedup is not permanent.
     assert webui_task.submit_generation("intentional-new-job", params, capture_logs=False) == "intentional-new-job"
 
 
@@ -236,7 +236,7 @@ def test_preview_staging_paths_do_not_bypass_duplicate_guard(isolated_jobs):
 
 @pytest.mark.parametrize("with_digest", [True, False])
 def test_different_preview_audio_is_not_merged_even_with_matching_metadata(isolated_jobs, tmp_path, with_digest):
-    """相同时长与文案不代表相同音频；用两个真实 MP3 复现错误合并。"""
+    """Same duration and script do not mean the same audio; reproduce the wrong merge with two real MP3s."""
     import hashlib
     import subprocess
 
@@ -261,7 +261,7 @@ def test_different_preview_audio_is_not_merged_even_with_matching_metadata(isola
 
 
 def test_parallel_real_downloads_publish_activity_from_worker_threads(isolated_jobs, monkeypatch, tmp_path):
-    """并发素材下载要携带任务上下文，验证真实 HTTP 下载和 FFmpeg 校验。"""
+    """Concurrent material downloads must carry the task context; verify real HTTP downloads and FFmpeg validation."""
     import subprocess
     from app.models.schema import MaterialInfo
     from app.services import material
@@ -313,7 +313,7 @@ def test_parallel_real_downloads_publish_activity_from_worker_threads(isolated_j
 
 
 def test_first_status_read_failure_still_registers_automatic_refresh():
-    """真实 Streamlit 运行时必须在首次状态读取失败后仍登记定时 Fragment。"""
+    """The real Streamlit runtime must still register the timed fragment after the first state read fails."""
     from pathlib import Path
 
     entry = Path(__file__).resolve().parents[2]/"webui"/"Main.py"
@@ -373,7 +373,7 @@ def test_browser_refresh_recovers_busy_job_and_displays_current_phase(isolated_j
         generation_activity={"phase":"generating", "started_at":now-350,
             "confirmed_at":now, "remote_id":"paid-123", "provider":"muapi"})
     entry = Path(__file__).resolve().parents[2]/"webui"/"Main.py"
-    # 两个独立 AppTest 实例模拟刷新后新建的 Streamlit 会话，共用后台任务。
+    # Two independent AppTest instances simulate a fresh Streamlit session after a refresh, sharing the background task.
     with patch.object(config, "try_save_config", return_value=True):
         for _ in range(2):
             app = AppTest.from_file(str(entry), default_timeout=60)
@@ -395,7 +395,7 @@ def test_browser_refresh_recovers_busy_job_and_displays_current_phase(isolated_j
 
 
 def test_persisted_processing_job_can_be_untracked_after_service_restart(isolated_jobs, tmp_path, monkeypatch):
-    """持久状态还在、当前服务已没有执行线程时，不能永远锁住生成按钮。"""
+    """When persisted state remains but the current service has no worker thread, the generate button must not stay locked forever."""
     from pathlib import Path
 
     monkeypatch.setattr(utils, "task_dir", lambda *_a, **_k: str(tmp_path))

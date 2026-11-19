@@ -1,4 +1,4 @@
-"""验证安装入口、可写目录与资源初始化的关键边界。"""
+"""Verify the key boundaries of the install entry point, writable directories, and resource initialization."""
 
 from concurrent.futures import ThreadPoolExecutor
 import json

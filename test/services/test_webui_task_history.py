@@ -32,10 +32,11 @@ TASK_HISTORY_CONSTANTS = {
 
 def _load_task_history_helpers():
     """
-    从 WebUI 入口中隔离加载不依赖 Streamlit 的任务历史纯函数。
+    Load the Streamlit-independent task history pure functions in isolation from the WebUI entry.
 
-    直接导入 Main.py 会执行整套页面渲染。测试只编译目标常量和函数，既验证
-    合并后的真实实现，也避免为了单元测试重新拆出一个只有少量函数的生产模块。
+    Importing Main.py directly would render the whole page. The test compiles only the target
+    constants and functions, which verifies the real merged implementation while avoiding
+    splitting out a tiny production module just for unit tests.
     """
     tree = ast.parse(WEBUI_MAIN.read_text(encoding="utf-8"))
     selected_nodes = []
@@ -67,7 +68,7 @@ get_unmet_restore_upload_requirements = TASK_HISTORY_NAMESPACE[
 
 
 def test_find_final_task_video_ignores_intermediate_files(tmp_path):
-    """任务历史只能把 final 成片识别为完成，不能使用合成中间文件。"""
+    """Task history must only treat final renders as complete, never intermediate composite files."""
     for file_name in (
         "combined-1.mp4",
         "temp-clip-1.mp4",
@@ -79,7 +80,7 @@ def test_find_final_task_video_ignores_intermediate_files(tmp_path):
 
 
 def test_find_final_task_video_returns_first_numbered_output(tmp_path):
-    """多成片任务与运行时结果保持一致，默认播放序号最小的最终视频。"""
+    """Multi-output tasks match the runtime result and default to playing the lowest-numbered final video."""
     (tmp_path / "final-10.mp4").touch()
     (tmp_path / "final-2.mp4").touch()
     (tmp_path / "final-1.mp4").touch()
@@ -100,8 +101,9 @@ def test_build_video_download_name_handles_empty_and_long_subjects():
 
 
 def test_build_video_download_name_avoids_windows_reserved_names():
-    # 使用官方规则的显式清单，避免测试复制生产代码的 range/comprehension；
-    # 如果实现误写范围，集合相等断言会立即失败，而不是与实现一起漏测。
+    # Use an explicit list from the official rules instead of copying the production
+    # range/comprehension; if the implementation gets the range wrong, the set-equality assertion
+    # fails immediately instead of sharing the implementation's blind spot.
     reserved_names = {
         "CON",
         "PRN",
@@ -148,7 +150,7 @@ def test_build_video_download_name_avoids_windows_reserved_names():
 
 
 def test_build_video_download_name_does_not_overmatch_similar_names():
-    """只处理 Windows 真实保留名，不能误伤相邻但合法的普通主题。"""
+    """Handle only real Windows reserved names, without rejecting similar but legal ordinary subjects."""
 
     for safe_name in ("COM0", "COM10", "LPT0", "LPT10", "COM⁴", "LPT⁴"):
         assert build_video_download_name(safe_name, 1, 1) == f"{safe_name}.mp4"
@@ -190,7 +192,7 @@ def test_restore_requirements_allow_explicit_replacements():
 
 
 def test_restore_requirements_require_file_in_upload_voice_mode():
-    """恢复上传配音任务时，继续使用上传模式必须重新选择音频文件。"""
+    """When restoring an uploaded-voiceover task, staying in upload mode requires reselecting the audio file."""
     requirements = build_restore_upload_requirements(
         {
             "video_source": "pexels",
@@ -210,7 +212,7 @@ def test_restore_requirements_require_file_in_upload_voice_mode():
 
 
 def test_restore_requirements_allow_replacing_upload_with_other_voice_modes():
-    """用户主动切换到自动配音或无配音时，不再强制恢复历史上传文件。"""
+    """When the user switches to auto voiceover or no voiceover, stop forcing the restore of the old uploaded file."""
     requirements = build_restore_upload_requirements(
         {
             "video_source": "pexels",

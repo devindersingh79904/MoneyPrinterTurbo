@@ -1,4 +1,4 @@
-"""实际渲染默认值、活动入口、独立视频配置及计费确认失效。"""
+"""Really render default values, the campaign entry, standalone video config, and billing-confirmation invalidation."""
 
 from pathlib import Path
 from unittest.mock import patch
@@ -112,7 +112,7 @@ def test_video_key_override_and_endpoint_are_independent_of_llm(llm_provider):
 
 
 def test_generation_rechecks_confirmation_at_submission_and_keeps_key_private():
-    """模拟另一会话在表单渲染后更新配置，提交时必须重新确认。"""
+    """Simulate another session updating the config after the form rendered; submit must re-confirm."""
     values = {
         "llm_provider": "jalapeno",
         "jalapeno_api_key": "shared-private-key",

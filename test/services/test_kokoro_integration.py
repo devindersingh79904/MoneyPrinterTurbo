@@ -1,7 +1,8 @@
-"""显式启用的真实服务测试；普通 CI 不需要安装或访问 Kokoro。
+"""Explicitly enabled real-service test; regular CI needs neither Kokoro installed nor reachable.
 
-启动本机服务后，设置 MPT_KOKORO_TEST_BASE_URL=http://127.0.0.1:8880/v1
-运行本文件。测试只合成短文本，不调用 LLM、素材平台或发布接口。
+After starting the local service, set MPT_KOKORO_TEST_BASE_URL=http://127.0.0.1:8880/v1
+and run this file. The test only synthesizes short text and calls no LLM, material
+platform or publishing API.
 """
 
 import os

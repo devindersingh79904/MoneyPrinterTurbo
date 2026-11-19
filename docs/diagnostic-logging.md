@@ -1,11 +1,12 @@
-# 诊断日志
+# Diagnostic Logging
 
-在 WebUI 的 **设置 → 界面设置 → 诊断日志** 中选择日志等级，按需开启
-**记录 API 请求参数**，点击 **应用日志设置**。设置立即作用于当前服务，
-包括正在运行任务的后续日志；同一服务的所有浏览器会话共用该设置。
-开启「隐藏日志」只隐藏界面日志，不会关闭终端输出。
+In the WebUI, open **Settings → Interface Settings → Diagnostic logging**, choose a log level, enable
+**Trace API request parameters** if needed, and click **Apply logging settings**. The settings take effect
+immediately on the current service, including subsequent logs from tasks that are already running; all browser
+sessions of the same service share the setting. Enabling "Hide Log" only hides the in-page log view and does not
+turn off terminal output.
 
-API、CLI 和 WebUI 使用相同的配置：
+The API, CLI and WebUI share the same configuration:
 
 ```toml
 [diagnostics]
@@ -13,28 +14,30 @@ log_level = "INFO"
 log_requests = false
 ```
 
-`log_level` 可选 TRACE、DEBUG、INFO、SUCCESS、WARNING、ERROR、CRITICAL。
-省略时沿用原来的顶层 `log_level`，默认 DEBUG。手工修改文件后需要重启，
-WebUI 的「应用」只即时更新当前进程，不会远程修改其它 API 或 CLI 进程。
+`log_level` accepts TRACE, DEBUG, INFO, SUCCESS, WARNING, ERROR and CRITICAL.
+When omitted, the previous top-level `log_level` is used, defaulting to DEBUG. Editing the file by hand requires
+a restart; "Apply" in the WebUI only updates the current process immediately and does not remotely change other
+API or CLI processes.
 
-请求追踪是独立开关，在 ERROR 等级下也能开启。它默认关闭，记录内容为：
+Request tracing is an independent switch and can be enabled even at the ERROR level. It is off by default and records:
 
-- 请求 ID、HTTP 方法、脱敏地址、经过长度限制的请求参数。
-- 返回状态（可取得时）、耗时，或失败的异常类型。
-- LLM SDK 调用参数。此处是 SDK 的输入，不是 SDK 最终发送的原始 JSON；
-  SDK 内部自动重试不会逐次显示。流式请求的耗时只统计到取得响应或流对象，
-  不包含后续下载时间。
+- The request ID, HTTP method, redacted URL and the length-limited request parameters.
+- The response status (when available) and elapsed time, or the exception type on failure.
+- LLM SDK call parameters. These are the SDK's inputs, not the raw JSON the SDK eventually sends;
+  the SDK's internal automatic retries are not shown one by one. For streaming requests, the elapsed time
+  only covers obtaining the response or stream object and excludes the subsequent download time.
 
-覆盖项目显式使用 `requests` 的素材、视频、语音、发布及登录等请求，以及
-OpenAI 兼容、Azure OpenAI、Qwen、Gemini 和 LiteLLM 文案调用。
-不捕获浏览器自身的网络流量、入站 API 正文、CLI 子进程、Edge TTS WebSocket
-或其它 SDK 内部传输。正常应用日志与第三方 SDK 自己的日志等级也不是同一开关。
+It covers the project's explicit `requests` calls for materials, video, speech, publishing and sign-in, as well as
+the OpenAI-compatible, Azure OpenAI, Qwen, Gemini and LiteLLM script-generation calls.
+It does not capture the browser's own network traffic, inbound API request bodies, CLI subprocesses, the Edge TTS
+WebSocket or other SDK-internal transports. The normal application log level and the log levels of third-party
+SDKs are separate switches as well.
 
-不会记录请求头、响应正文或上传文件内容。密钥、Token、Cookie、密码及签名
-字段会遮盖，URL 查询参数的值统一隐藏，音视频/base64 等内容省略。原始
-非结构化请求体不记录。**提示词和其它业务参数可能出现在日志中**，排查结束后
-请关闭追踪，分享日志前仍需检查其中是否包含私人内容。诊断不会向外部发送日志，
-也不会额外发起、重试或重放请求。
+Request headers, response bodies and uploaded file contents are never logged. Keys, tokens, cookies, passwords and
+signature fields are masked, the values of URL query parameters are hidden uniformly, and audio/video, base64 and
+similar content is omitted. Raw unstructured request bodies are not logged. **Prompts and other business parameters
+may appear in the logs**, so turn tracing off once troubleshooting is done and still check the logs for private
+content before sharing them. Diagnostics never send logs externally and never issue, retry or replay additional requests.
 
-CLI 日志仍输出到 stderr，stdout 保持机器可读 JSON。WebUI 任务日志沿用现有
-线程归属过滤和条数上限，不会因为切换等级移除正在运行任务的日志处理器。
+CLI logs still go to stderr while stdout remains machine-readable JSON. WebUI task logs keep the existing
+thread-ownership filtering and line limit, and switching the level does not remove the log handlers of running tasks.

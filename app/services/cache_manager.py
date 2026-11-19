@@ -1,4 +1,4 @@
-"""视频素材缓存的统计、预览和清理服务。"""
+"""Statistics, preview and cleanup service for the video material cache."""
 
 from __future__ import annotations
 
@@ -14,8 +14,9 @@ from loguru import logger
 from app.utils import utils
 
 
-# 在线素材使用 URL 的 MD5 作为稳定文件名。缓存管理只接受该命名格式，避免把
-# 用户误放到目录中的视频、说明文件或其它业务文件当作缓存删除。
+# Online materials use the MD5 of their URL as a stable file name. Cache management only
+# accepts that naming format, so videos, notes or other business files a user accidentally
+# put into the directory are never deleted as cache.
 _VIDEO_CACHE_FILE_PATTERN = re.compile(r"^vid-[0-9a-f]{32}\.mp4$")
 # save_video writes to this same-directory name before atomically publishing a
 # validated clip. A forced process exit can leave one behind, so include only
@@ -28,7 +29,7 @@ _SECONDS_PER_DAY = 24 * 60 * 60
 
 @dataclass(frozen=True)
 class VideoCacheStats:
-    """缓存目录的轻量统计结果，只包含文件系统元数据。"""
+    """Lightweight statistics for the cache directory, containing only file system metadata."""
 
     file_count: int = 0
     total_size: int = 0
@@ -38,7 +39,7 @@ class VideoCacheStats:
 
 @dataclass(frozen=True)
 class VideoCacheCleanupResult:
-    """一次清理的执行结果，允许部分文件删除失败。"""
+    """Result of one cleanup run; some files may have failed to delete."""
 
     deleted_count: int = 0
     deleted_size: int = 0
@@ -47,7 +48,7 @@ class VideoCacheCleanupResult:
 
 @dataclass(frozen=True)
 class _VideoCacheEntry:
-    """扫描阶段保存的最小文件信息，避免清理时打开或解析视频。"""
+    """Minimal file info kept from the scan phase so cleanup never opens or parses videos."""
 
     path: str
     name: str
@@ -59,18 +60,19 @@ class _VideoCacheEntry:
 
 
 def video_cache_dir() -> str:
-    """返回项目管理的默认视频缓存目录。"""
+    """Return the default video cache directory managed by the project."""
 
     return os.path.realpath(utils.storage_dir("cache_videos"))
 
 
 def _iter_video_cache_entries(include_temp: bool = False) -> Iterator[_VideoCacheEntry]:
     """
-    顺序扫描默认缓存目录第一层。
+    Sequentially scan the top level of the default cache directory.
 
-    使用 ``os.scandir`` 是为了在缓存达到数万文件时复用目录遍历返回的元数据，
-    避免 ``Path.iterdir`` 后再次查询文件类型。这里不递归、不打开视频，也不调用
-    FFmpeg，因此耗时主要与文件数量线性相关，而不是与视频总容量相关。
+    ``os.scandir`` is used so that, once the cache reaches tens of thousands of files, the
+    metadata returned by the directory walk is reused instead of querying the file type again
+    after ``Path.iterdir``. This does not recurse, open videos or call FFmpeg, so the runtime
+    scales linearly with the number of files rather than with the total video size.
     """
 
     cache_dir = video_cache_dir()
@@ -92,7 +94,7 @@ def _iter_video_cache_entries(include_temp: bool = False) -> Iterator[_VideoCach
                 continue
 
             try:
-                # 不跟随符号链接，确保清理逻辑不会越过默认缓存目录边界。
+                # Do not follow symlinks, so cleanup never crosses the default cache directory boundary.
                 if not entry.is_file(follow_symlinks=False):
                     continue
                 # DirEntry.stat() reports st_dev/st_ino as 0 on Windows, which
@@ -131,7 +133,7 @@ def _is_cleanup_candidate(
 
 
 def _validate_max_age_days(max_age_days: int | None) -> None:
-    """即使缓存目录为空，也应稳定拒绝无效清理参数。"""
+    """Invalid cleanup arguments must be rejected consistently, even when the cache is empty."""
     if max_age_days is None:
         return
     if (
@@ -144,10 +146,11 @@ def _validate_max_age_days(max_age_days: int | None) -> None:
 
 def get_video_cache_stats(max_age_days: int | None = None) -> VideoCacheStats:
     """
-    统计全部缓存，或预览修改时间早于指定天数的可清理缓存。
+    Count the whole cache, or preview the cleanable cache older than the given number of days.
 
-    ``max_age_days=None`` 表示全部缓存。统计过程只读取目录项的大小和修改时间，
-    不读取视频内容，因此即使缓存总容量很大也不会产生与容量成比例的 I/O。
+    ``max_age_days=None`` means the whole cache. Only the size and modification time of each
+    directory entry are read, never the video content, so even a very large cache does not
+    cause I/O proportional to its size.
     """
 
     _validate_max_age_days(max_age_days)
@@ -179,11 +182,12 @@ def get_video_cache_stats(max_age_days: int | None = None) -> VideoCacheStats:
 
 def clean_video_cache(max_age_days: int | None = None) -> VideoCacheCleanupResult:
     """
-    清理默认视频缓存，并返回可向用户展示的汇总结果。
+    Clean the default video cache and return a summary that can be shown to the user.
 
-    页面预览与真正点击清理之间可能间隔较久，所以执行时必须重新扫描和判断，
-    不能复用旧候选列表。删除采用逐文件容错：单个文件被占用或权限不足时记录
-    警告并继续，避免几百个文件中一个异常文件导致整次清理失败。
+    A long time may pass between the page preview and the actual cleanup click, so the run
+    must rescan and re-evaluate instead of reusing an old candidate list. Deletion is
+    fault-tolerant per file: if a single file is locked or lacks permission, log a warning
+    and continue, so one bad file out of hundreds does not fail the whole cleanup.
     """
 
     _validate_max_age_days(max_age_days)
@@ -199,17 +203,19 @@ def clean_video_cache(max_age_days: int | None = None) -> VideoCacheCleanupResul
     failed_count = 0
     cache_dir = video_cache_dir()
 
-    # 边扫描边删除，不在内存中保留完整候选列表。即使目录增长到几十万个文件，
-    # 清理过程的额外内存仍保持常量级；执行时使用统一 now，避免长清理过程中
-    # 截止时间不断移动而产生不可预测的候选范围。
+    # Delete while scanning instead of keeping the full candidate list in memory, so the extra
+    # memory stays constant even if the directory grows to hundreds of thousands of files. Use a
+    # single `now` for the run so the cutoff does not keep moving during a long cleanup and
+    # produce an unpredictable candidate set.
     for entry in _iter_video_cache_entries(include_temp=True):
         if not _is_cleanup_candidate(entry, max_age_days, now):
             continue
         candidate_count += 1
         candidate_size += entry.size
         try:
-            # entry.path 来自默认目录的第一层 scandir；删除前再次校验父目录和
-            # 文件名，防止未来修改扫描逻辑时意外扩大可删除范围。
+            # entry.path comes from the top-level scandir of the default directory; re-check the
+            # parent directory and file name before deleting, so future changes to the scan logic
+            # cannot accidentally widen the deletable range.
             if (
                 os.path.realpath(os.path.dirname(entry.path)) != cache_dir
                 or not (

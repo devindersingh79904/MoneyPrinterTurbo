@@ -222,9 +222,10 @@ def levenshtein_distance(s1, s2):
 
 
 def similarity(a, b):
-    # 大小写折叠可能改变字符数（例如 "İ".lower() 是两个码点），编辑距离与分母
-    # 必须用同一份归一化后的文本，否则结果会超出 [0, 1]。两个空串视为完全相同，
-    # 避免除零；字幕校正会拿空脚本行或空的转写文本参与比较。
+    # Case folding can change the character count (e.g. "İ".lower() is two code points), so the
+    # edit distance and the denominator must use the same normalized text or the result leaves
+    # [0, 1]. Two empty strings count as identical to avoid division by zero; subtitle correction
+    # compares empty script lines or empty transcripts.
     normalized_a = a.lower()
     normalized_b = b.lower()
     max_length = max(len(normalized_a), len(normalized_b))

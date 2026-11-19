@@ -17,13 +17,13 @@ LOG_RECORD_FORMAT = (
     '"{file.path}:{line}":<blue> {function}</> '
     "- <level>{message}</>\n"
 )
-# Loguru 启动时默认终端 handler 的 ID 为 0。WebUI 重新加载时只能替换这个
-# 基础终端输出，不能调用 logger.remove() 清空全部 handler，否则正在运行任务
-# 用于收集 WebUI 日志的临时 sink 也会被删除。
+# Loguru's default terminal handler has ID 0 at startup. When the WebUI reloads, only this base terminal
+# output may be replaced; logger.remove() must not clear every handler, or the temporary sinks that
+# running tasks use to collect WebUI logs would be deleted too.
 _terminal_handler_id: int | None = 0
 _terminal_handler_lock = threading.RLock()
 LOG_LEVELS = ("TRACE", "DEBUG", "INFO", "SUCCESS", "WARNING", "ERROR", "CRITICAL")
-# 只替换不可变快照，日志线程不获取生成任务持有的配置锁。
+# Only swap the immutable snapshot; the logging thread never takes the config lock held by generation tasks.
 _runtime_logging = ("DEBUG", False)
 
 
@@ -32,7 +32,7 @@ def get_logging_options() -> tuple[str, bool]:
 
 
 def set_logging_options(level: str, log_requests: bool = False) -> None:
-    """即时调整本进程日志，不重建 handler，不中断正在运行的任务。"""
+    """Adjust this process's logging immediately, without rebuilding handlers or interrupting running tasks."""
     global _runtime_logging
     level = str(level).strip().upper()
     if level not in LOG_LEVELS:
@@ -44,22 +44,22 @@ def set_logging_options(level: str, log_requests: bool = False) -> None:
 
 def runtime_log_filter(record) -> bool:
     level, log_requests = _runtime_logging
-    # 请求追踪是独立开关，ERROR 等级下也允许用户显式开启诊断。
+    # Request tracing is a separate switch; users may explicitly enable diagnostics even at ERROR level.
     if record["extra"].get("request_trace"):
         return log_requests
     return record["level"].no >= logger.level(level).no
 
 
-# WebUI 按任务工作线程的 ID 过滤日志。任务为并行下载、片段编码和心跳启动的
-# 辅助线程有各自的线程 ID，它们写出的日志会被整条丢弃，结果耗时最长的阶段
-# 在 WebUI 里反而没有任何输出。这里记录“辅助线程 -> 发起它的线程”的映射，
-# 让日志过滤器可以把辅助线程的记录归回所属任务。
+# The WebUI filters logs by the task worker thread's ID. Helper threads a task starts for parallel downloads,
+# clip encoding, and heartbeats have their own thread IDs, so their log records are dropped entirely and
+# the longest-running stages show nothing in the WebUI. Record a "helper thread -> thread that started it"
+# mapping here so the log filter can attribute helper-thread records back to their task.
 _log_scope_roots: dict[int, int] = {}
 _log_scope_lock = threading.Lock()
 
 
 def log_scope_thread_id(thread_id: int | None = None) -> int:
-    """返回线程所属日志作用域的根线程 ID；未绑定的线程就是它自己。"""
+    """Return the root thread ID of the thread's logging scope; an unbound thread is its own root."""
     if thread_id is None:
         thread_id = threading.get_ident()
     with _log_scope_lock:
@@ -68,11 +68,12 @@ def log_scope_thread_id(thread_id: int | None = None) -> int:
 
 def bind_log_scope(func):
     """
-    包装一个将在其它线程执行的函数，使其日志归属调用本函数的线程。
+    Wrap a function that will run in another thread so its logs are attributed to the thread calling this.
 
-    必须在提交任务的线程里调用：作用域在包装时确定，辅助线程再启动的线程
-    也会归到最初的任务线程。执行结束后解除绑定，因为线程 ID 会被系统复用，
-    残留映射会把之后无关线程的日志算进已经结束的任务。
+    Must be called from the thread submitting the task: the scope is fixed at wrap time, and threads started
+    by helper threads are also attributed to the original task thread. The binding is removed after execution
+    because the OS reuses thread IDs, and a stale mapping would count later unrelated threads' logs toward a
+    task that has already finished.
     """
     root_thread_id = log_scope_thread_id()
 
@@ -89,8 +90,8 @@ def bind_log_scope(func):
             return func(*args, **kwargs)
         finally:
             with _log_scope_lock:
-                # 线程池会复用线程：恢复进入前的归属，而不是一律删除，避免
-                # 嵌套包装提前清掉外层仍在使用的绑定。
+                # Thread pools reuse threads: restore the previous attribution instead of always deleting, so
+                # nested wrapping does not clear a binding the outer level still uses.
                 if previous_root is None:
                     _log_scope_roots.pop(thread_id, None)
                 else:
@@ -101,14 +102,14 @@ def bind_log_scope(func):
 
 def _project_relative_path(file_path):
     """
-    把绝对路径缩短为 ``./`` 开头、始终使用正斜杠的项目相对路径。
+    Shorten an absolute path to a project-relative path starting with ``./`` and always using forward slashes.
 
-    Windows 上项目可能通过映射网络盘或 ``subst`` 盘启动。此时调用栈里的路径
-    仍是 ``X:\\MoneyPrinterTurbo\\...``，而 ``PROJECT_ROOT`` 经 ``realpath``
-    解析后落在 ``C:\\...``，``os.path.relpath`` 会直接抛出 ``ValueError``。
-    格式化函数抛错会被 loguru 捕获并丢弃整条记录，终端和 WebUI 日志面板会
-    同时变空，因此这里必须兜底返回原始路径。项目目录之外的文件同理：把
-    ``./`` 拼到 ``..`` 回溯路径上只会得到更难读的结果。
+    On Windows the project may be launched through a mapped network drive or a ``subst`` drive. The paths in
+    the call stack are then still ``X:\\MoneyPrinterTurbo\\...``, while ``PROJECT_ROOT`` resolves through
+    ``realpath`` to ``C:\\...``, and ``os.path.relpath`` raises ``ValueError`` outright.
+    An exception in the format function is caught by loguru and the whole record is dropped, emptying both
+    the terminal and the WebUI log panel, so this must fall back to the original path. The same goes for
+    files outside the project directory: prefixing ``./`` to a ``..`` path only makes it harder to read.
     """
     try:
         relative_path = os.path.relpath(file_path, PROJECT_ROOT)
@@ -116,27 +117,27 @@ def _project_relative_path(file_path):
         return file_path
     if relative_path == os.pardir or relative_path.startswith(os.pardir + os.sep):
         return file_path
-    # Windows 的 relpath 返回反斜杠分隔的路径，直接拼接会得到 ``./app\\utils``
-    # 这种混合分隔符的输出，与其它平台的日志不一致。
+    # On Windows relpath returns a backslash-separated path; joining directly would yield mixed-separator
+    # output like ``./app\\utils``, inconsistent with logs on other platforms.
     return f"./{relative_path.replace(os.sep, '/')}"
 
 
 def format_log_record(record):
     """
-    统一格式化终端与 WebUI 日志。
+    Format terminal and WebUI logs uniformly.
 
-    Loguru 会把同一条记录交给多个 sink。第一个 sink 可能已经将绝对路径转换
-    为项目相对路径，因此这里同时兼容绝对路径和 ``./`` 开头的已格式化路径。
-    WebUI sink 会关闭颜色，但时间、级别、调用位置和消息内容与终端保持一致。
+    Loguru hands the same record to multiple sinks. The first sink may already have converted the absolute
+    path to a project-relative one, so both absolute paths and already-formatted ``./`` paths are handled here.
+    The WebUI sink disables colors, but time, level, call site, and message stay identical to the terminal.
     """
     file_path = record["file"].path
     if os.path.isabs(file_path):
         record["file"].path = _project_relative_path(file_path)
 
-    # 日志消息有时会包含任务文件的绝对路径。统一缩短为项目相对路径，可以
-    # 避免 WebUI 和终端因初始化入口不同而展示两套内容。
-    # 只替换完整的项目根路径；`<root>-backup`、`<root>2` 这类同级目录只是
-    # 前缀相同，按子串替换会把它们改成 `.-backup`、`.2` 这样错误的路径。
+    # Log messages sometimes contain absolute paths to task files. Shortening them to project-relative paths
+    # keeps the WebUI and terminal from showing two different versions due to different init entry points.
+    # Only replace the complete project root path; sibling directories like `<root>-backup` and `<root>2` merely
+    # share the prefix, and a substring replacement would turn them into wrong paths like `.-backup` and `.2`.
     record["message"] = _PROJECT_ROOT_IN_MESSAGE_RE.sub(".", record["message"])
     return LOG_RECORD_FORMAT
 
@@ -167,11 +168,11 @@ def force_utf8_console() -> None:
 
 def configure_terminal_logger(sink, level: str, colorize: bool = True) -> int:
     """
-    安全替换进程级终端日志 handler，并保留任务专用 handler。
+    Safely replace the process-level terminal log handler while keeping task-specific handlers.
 
-    Streamlit 在代码热重载或缓存失效时可能重新执行日志初始化。这里只按已记录
-    的 handler ID 精确移除旧终端输出，因此不会中断后台任务正在写入的 WebUI
-    日志。锁用于保护多个浏览器会话同时初始化时的 ID 更新。
+    Streamlit may re-run logging initialization on hot reload or cache invalidation. Only the old terminal
+    output is removed, precisely by its recorded handler ID, so WebUI logs that background tasks are writing
+    are not interrupted. The lock protects the ID update when several browser sessions initialize at once.
     """
     global _terminal_handler_id
 
@@ -182,8 +183,8 @@ def configure_terminal_logger(sink, level: str, colorize: bool = True) -> int:
             try:
                 logger.remove(_terminal_handler_id)
             except ValueError:
-                # 测试或外部入口可能已经移除该 handler。继续创建新的终端输出，
-                # 不需要影响其它仍有效的日志 sink。
+                # A test or external entry point may already have removed this handler. Keep creating the new
+                # terminal output without affecting other still-valid log sinks.
                 pass
 
         _terminal_handler_id = logger.add(
