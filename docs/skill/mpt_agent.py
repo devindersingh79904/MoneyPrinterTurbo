@@ -38,6 +38,7 @@ SUPPORTED_SOURCES = {
     "muapi",
     "infistar",
     "jalapeno",
+    "google_veo",
     # Keep this list aligned with ``_CLI_VIDEO_SOURCES`` in cli.py. A source that
     # the CLI accepts must not be rejected here as unsupported.
     "openai_image",
@@ -50,6 +51,7 @@ VOLCENGINE_ARK_API_KEY_URL = (
 OFOX_API_KEY_URL = "https://ofox.ai"
 MUAPI_API_KEY_URL = "https://muapi.ai"
 INFISTAR_VIDEO_API_KEY_URL = "https://infistar.cc/keys"
+GOOGLE_VEO_API_KEY_URL = "https://aistudio.google.com/app/apikey"
 JALAPENO_API_KEY_URL = "https://www.jalapeno-cloud.ai/MoneyPrinterTurbo"
 PEXELS_API_KEY_URL = "https://www.pexels.com/api/"
 PEXELS_VALIDATION_URL = "https://api.pexels.com/v1/collections?per_page=1"
@@ -268,6 +270,7 @@ def apply_environment_config(config_path: Path) -> None:
     muapi_key = os.environ.get("MPT_MUAPI_API_KEY", "").strip()
     infistar_video_key = os.environ.get("MPT_INFISTAR_VIDEO_API_KEY", "").strip()
     jalapeno_video_key = os.environ.get("MPT_JALAPENO_VIDEO_API_KEY", "").strip()
+    google_veo_key = os.environ.get("MPT_GOOGLE_VEO_API_KEY", "").strip()
     if not any(
         (
             provider,
@@ -281,6 +284,7 @@ def apply_environment_config(config_path: Path) -> None:
             muapi_key,
             infistar_video_key,
             jalapeno_video_key,
+            google_veo_key,
         )
     ):
         return
@@ -326,6 +330,9 @@ def apply_environment_config(config_path: Path) -> None:
     if jalapeno_video_key:
         text = _replace_config_value(text, "jalapeno_video_api_key", jalapeno_video_key)
         changes.append("jalapeno_video_api_key")
+    if google_veo_key:
+        text = _replace_config_value(text, "google_veo_api_key", google_veo_key)
+        changes.append("google_veo_api_key")
     config_path.write_text(text, encoding="utf-8")
     log("updated configuration fields: " + ", ".join(changes))
 
@@ -507,6 +514,23 @@ def missing_config(config_path: Path, cli_args: list[str]) -> tuple[str, list[st
             missing.append("infistar_video_api_key")
         if not has_cli_option(cli_args, "--confirm-infistar-charge"):
             missing.append("confirm_infistar_charge")
+    elif source == "google_veo":
+        # Mirrors google_accounts.resolve_api_key("veo"): a selected named account
+        # wins, otherwise the Veo key, the shared Gemini key, then the environment.
+        account = _plain_config_value(text, "google_veo_account").strip().lower()
+        if account:
+            value = _plain_config_value(text, f"google_account_{account}_api_key").strip()
+        else:
+            value = (
+                _plain_config_value(text, "google_veo_api_key").strip()
+                or _plain_config_value(text, "gemini_api_key").strip()
+                or os.environ.get("GEMINI_API_KEY", "").strip()
+                or os.environ.get("GOOGLE_API_KEY", "").strip()
+            )
+        if not _has_configured_value(value):
+            missing.append("google_veo_api_key")
+        if not has_cli_option(cli_args, "--confirm-google-veo-charge"):
+            missing.append("confirm_google_veo_charge")
     elif source == "jalapeno":
         value = (
             _plain_config_value(text, "jalapeno_video_api_key").strip()
@@ -557,6 +581,7 @@ def report_missing_config(provider: str, missing: list[str]) -> int:
             "muapi_api_key",
             "infistar_video_api_key",
             "jalapeno_video_api_key",
+            "google_veo_api_key",
         }
         for field in missing
     ):
@@ -618,6 +643,11 @@ def report_missing_config(provider: str, missing: list[str]) -> int:
         print("INFISTAR_VIDEO_API_KEY_ENV=MPT_INFISTAR_VIDEO_API_KEY")
     if "confirm_infistar_charge" in missing:
         print("INFISTAR_CHARGE_CONFIRMATION_REQUIRED=--confirm-infistar-charge")
+    if "google_veo_api_key" in missing:
+        print(f"GOOGLE_VEO_API_KEY_URL={GOOGLE_VEO_API_KEY_URL}")
+        print("GOOGLE_VEO_API_KEY_ENV=MPT_GOOGLE_VEO_API_KEY")
+    if "confirm_google_veo_charge" in missing:
+        print("GOOGLE_VEO_CHARGE_CONFIRMATION_REQUIRED=--confirm-google-veo-charge")
     if "jalapeno_video_api_key" in missing or "jalapeno_api_key" in missing:
         print(f"JALAPENO_API_KEY_URL={JALAPENO_API_KEY_URL}")
     if "jalapeno_video_api_key" in missing:

@@ -47,6 +47,7 @@ _CLI_VIDEO_SOURCES = (
     "volcengine_seedance",
     "ofox",
     "infistar",
+    "google_veo",
     "jalapeno",
     "metaso_minimax",
     "muapi",
@@ -403,6 +404,10 @@ Batch manifests:
     material_group.add_argument(
         "--confirm-infistar-charge", action="store_true",
         help="confirm paid Infistar video generation for materials or video output",
+    )
+    material_group.add_argument(
+        "--confirm-google-veo-charge", action="store_true",
+        help="confirm paid Google Veo video generation for materials or video output",
     )
     material_group.add_argument(
         "--confirm-ofox-charge",
@@ -812,6 +817,9 @@ Batch manifests:
     if (not args.batch_file and args.video_source == "infistar"
             and stage_requires_materials and not args.confirm_infistar_charge):
         parser.error("--confirm-infistar-charge is required with --video-source infistar")
+    if (not args.batch_file and args.video_source == "google_veo"
+            and stage_requires_materials and not args.confirm_google_veo_charge):
+        parser.error("--confirm-google-veo-charge is required with --video-source google_veo")
     if (not args.batch_file and args.video_source == "jalapeno"
             and stage_requires_materials and not args.confirm_jalapeno_charge):
         parser.error("--confirm-jalapeno-charge is required with --video-source jalapeno")
@@ -1229,6 +1237,7 @@ def _validate_batch_task_params(
     muapi_charge_confirmed: bool,
     infistar_charge_confirmed: bool = False,
     jalapeno_charge_confirmed: bool = False,
+    google_veo_charge_confirmed: bool = False,
 ) -> None:
     if not params.video_subject.strip() and not params.video_script.strip():
         raise ValueError("one of video_subject or video_script is required")
@@ -1301,6 +1310,9 @@ def _validate_batch_task_params(
     if (params.video_source == "infistar" and stop_at in {"materials", "video"}
             and not infistar_charge_confirmed):
         raise ValueError("--confirm-infistar-charge is required for Infistar video generation")
+    if (params.video_source == "google_veo" and stop_at in {"materials", "video"}
+            and not google_veo_charge_confirmed):
+        raise ValueError("--confirm-google-veo-charge is required for Google Veo video generation")
     if (params.video_source == "jalapeno" and stop_at in {"materials", "video"}
             and not jalapeno_charge_confirmed):
         raise ValueError("--confirm-jalapeno-charge is required for Jalapeno Cloud video generation")
@@ -1420,6 +1432,7 @@ def _build_batch_tasks(args: argparse.Namespace) -> list[VideoParams]:
                 muapi_charge_confirmed=args.confirm_muapi_charge,
                 infistar_charge_confirmed=args.confirm_infistar_charge,
                 jalapeno_charge_confirmed=args.confirm_jalapeno_charge,
+                google_veo_charge_confirmed=args.confirm_google_veo_charge,
             )
         except (TypeError, ValueError) as exc:
             raise ValueError(f"invalid batch task {index}: {exc}") from exc

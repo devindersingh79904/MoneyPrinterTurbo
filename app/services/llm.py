@@ -16,6 +16,7 @@ from openai.types.chat import ChatCompletion
 
 from app.config import config
 from app.models.llm_provider import DEFAULT_LLM_PROVIDER_ID, get_llm_provider
+from app.services import google_accounts
 from app.utils import utils
 from app.utils.request_logging import trace_sdk_call
 
@@ -353,6 +354,9 @@ def _generate_response(
 
         logger.info(f"llm provider: {llm_provider}")
         api_key = runtime_app_config.get(provider.config_key("api_key"), "")
+        if provider.adapter == "gemini":
+            # A named Google account, when selected, overrides the single gemini_api_key.
+            api_key = google_accounts.resolve_api_key("gemini", runtime_app_config)
         configured_model = runtime_app_config.get(provider.config_key("model_name"), "")
         model_name = provider.resolve_model_name(configured_model)
         if configured_model and model_name != configured_model:

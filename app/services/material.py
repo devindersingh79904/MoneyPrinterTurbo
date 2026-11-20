@@ -26,6 +26,7 @@ from app.models.schema import ImageMotion, MaterialInfo, VideoAspect, VideoConca
 from app.services import (
     codex_image,
     generation_progress,
+    google_veo,
     infistar_video,
     jalapeno_video,
     material_cache,
@@ -2436,6 +2437,11 @@ def download_videos(
             task_id=task_id, search_terms=search_terms, video_aspect=video_aspect,
             audio_duration=audio_duration, max_clip_duration=max_clip_duration,
         )
+    if source == "google_veo":
+        return _download_videos_google_veo_on_demand(
+            task_id=task_id, search_terms=search_terms, video_aspect=video_aspect,
+            audio_duration=audio_duration, max_clip_duration=max_clip_duration,
+        )
     if source == "wavespeed":
         # AI generation bills per clip, so the stock-source flow of "fetch candidates for all keywords first,
         # then select" cannot be reused, or unused clips would be paid for. Generation sources generate
@@ -3359,6 +3365,44 @@ if __name__ == "__main__":
     download_videos(
         "test123", ["Money Exchange Medium"], audio_duration=100, source="pixabay"
     )
+
+
+def _download_videos_google_veo_on_demand(
+    *, task_id, search_terms, video_aspect, audio_duration, max_clip_duration,
+):
+    """Generate one Veo clip per keyword; stop paying once the voiceover is covered."""
+    try:
+        required = float(audio_duration)
+        clip_duration = int(max_clip_duration)
+    except (ValueError, TypeError, OverflowError) as exc:
+        raise google_veo.GoogleVeoError("Google Veo duration must be finite and positive") from exc
+    if not math.isfinite(required) or clip_duration <= 0:
+        raise google_veo.GoogleVeoError("Google Veo duration must be finite and positive")
+    paths = []
+    sources = []
+    covered = 0.0
+    try:
+        for term in search_terms:
+            if covered >= required:
+                break
+            try:
+                item = google_veo.generate_video(
+                    search_term=term, video_aspect=video_aspect,
+                    clip_duration=clip_duration, output_dir=utils.task_dir(task_id),
+                )
+            except google_veo.GoogleVeoFilteredError as exc:
+                # Filtered prompts are not billed, so moving on cannot double-charge.
+                logger.warning(f"skipping keyword blocked by Google Veo: {term!r} ({exc})")
+                continue
+            paths.append(item.url)
+            sources.append(_material_source_record(item, item.url))
+            covered += min(clip_duration, item.duration)
+    finally:
+        _persist_material_sources(task_id, sources)
+    if not paths:
+        raise google_veo.GoogleVeoError("Google Veo produced no clips for this script")
+    logger.success(f"generated {len(paths)} Google Veo clips")
+    return paths
 
 
 def _download_videos_infistar_on_demand(

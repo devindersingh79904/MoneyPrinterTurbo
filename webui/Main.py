@@ -55,6 +55,8 @@ from app.services import (
     material,
     metaso_minimax,
     muapi,
+    google_accounts,
+    google_veo,
     infistar_video,
     jalapeno_video,
     ofox,
@@ -149,6 +151,7 @@ VIDEO_SOURCE_GROUPS = {
         "jalapeno",
         "wavespeed",
         "muapi",
+        "google_veo",
     ),
     "ai_image": ("openai_image", "codex_image"),
     "local": ("local",),
@@ -325,7 +328,8 @@ CREDENTIAL_COMPANION_KEYS = {
 }
 
 NON_LLM_COMPANION_KEYS = {
-    "app": ("upload_post_username",)
+    # Google account names and selections travel with their per-account keys.
+    "app": ("upload_post_username", "google_accounts", "google_veo_account", "gemini_account")
 }
 # The same key may use a different widget key in each panel: the audio panel edits the Gemini
 # and MiMo LLM keys directly. Restoring a backup must clear every alias, or the stale value
@@ -804,6 +808,7 @@ def _initialize_session_state():
         "wavespeed_confirm_charge": False,
         "volcengine_seedance_confirm_charge": False,
         "infistar_confirm_charge": False,
+        "google_veo_confirm_charge": False,
         "jalapeno_confirm_charge": False,
         "ofox_confirm_charge": False,
         "metaso_minimax_confirm_charge": False,
@@ -3503,6 +3508,7 @@ def _material_provider_labels():
         "loomloom": tr("Shengsuan Cloud AI Video"),
         "volcengine_seedance": tr("Volcano Engine Seedance"),
         "infistar": tr("Infistar AI Video"),
+        "google_veo": tr("Google Veo"),
         "jalapeno": tr("Jalapeno Cloud AI Video"),
         "wavespeed": tr("WaveSpeed AI Video"),
         "muapi": tr("MuAPI AI Video"),
@@ -4024,6 +4030,8 @@ def _render_material_provider_settings(provider):
             "volcengine_seedance_base_url",
             seedance_base_url.strip() or volcengine_seedance.DEFAULT_BASE_URL,
         )
+    elif provider == "google_veo":
+        _render_google_veo_provider_settings(app_settings)
     elif provider == "infistar":
         st.markdown(f"**{tr('Infistar AI Video')}**")
         st.caption(tr("Infistar Video Key Help"))
@@ -4726,7 +4734,14 @@ def _render_settings_dialog():
                         st.info(tips)
 
                 st_llm_api_key = llm_api_key
-                if llm_provider_spec.show_api_key:
+                gemini_account = (
+                    _render_google_account_selector(
+                        "gemini", tr("Google Account"), container=llm_form_panel
+                    )
+                    if llm_provider_spec.adapter == "gemini"
+                    else ""
+                )
+                if llm_provider_spec.show_api_key and not gemini_account:
                     st_llm_api_key = llm_form_panel.text_input(
                         tr("API Key"),
                         value=llm_api_key,
@@ -6164,6 +6179,7 @@ def _render_video_settings(panel, params):
                 "wavespeed": tr("WaveSpeed AI Video"),
                 "volcengine_seedance": tr("Volcano Engine Seedance"),
                 "infistar": tr("Infistar AI Video"),
+        "google_veo": tr("Google Veo"),
                 "jalapeno": tr("Jalapeno Cloud AI Video"),
                 "ofox": tr("OFox AI Video"),
                 "metaso_minimax": tr("Metaso MiniMax H3"),
@@ -6202,6 +6218,8 @@ def _render_video_settings(panel, params):
                     _effective_loomloom_api_token()
                 )
 
+            if params.video_source == "google_veo":
+                st.caption(tr("Google Veo Help"))
             if params.video_source == "infistar":
                 st.caption(tr("Infistar AI Video Help"))
                 selected_infistar_model = _render_infistar_model_selector()
@@ -6397,7 +6415,11 @@ def _render_video_settings(panel, params):
             # MiniMax H3's remote duration range is 4-15 seconds. Use the full capability range for
             # Metaso, so 2/3 seconds are not billed as 4 and the WebUI matches the CLI and service
             # layer.
-            if params.video_source == "infistar":
+            if params.video_source == "google_veo":
+                video_clip_durations = list(
+                    google_veo.allowed_durations(config.snapshot_config_with_pending(config.app))
+                )
+            elif params.video_source == "infistar":
                 # Each model first offers its measured fixed specs; never send a duration the API
                 # rejects to a paid endpoint.
                 video_clip_durations = [infistar_video.MODELS.get(selected_infistar_model, {"seconds": 5})["seconds"]]
@@ -6534,6 +6556,9 @@ def _render_video_settings(panel, params):
                 _render_wavespeed_video_settings(params)
             if params.video_source == "volcengine_seedance":
                 _render_seedance_video_settings(params)
+            if params.video_source == "google_veo":
+                st.warning(tr("Google Veo Billing Notice"))
+                st.checkbox(tr("Confirm Google Veo Charge"), key="google_veo_confirm_charge")
             if params.video_source == "infistar":
                 st.warning(tr("Infistar Video Billing Notice"))
                 st.checkbox(tr("Confirm Infistar Charge"), key="infistar_confirm_charge")
@@ -6706,6 +6731,143 @@ def _jalapeno_charge_signature(params, snapshot):
         snapshot.get("jalapeno_video_resolution", ""),
         str(params.video_aspect), params.video_clip_duration, params.video_count,
     ]).encode()).hexdigest()
+
+
+_GOOGLE_ACCOUNT_NAME_INPUT = "google_account_new_name_input"
+_GOOGLE_ACCOUNT_KEY_INPUT = "google_account_new_api_key_input"
+
+
+def _render_google_account_selector(usage, label, container=None):
+    """Pick the named Google account for one usage; returns the selection ("" = single key)."""
+    container = container or st
+    snapshot = config.snapshot_config_with_pending(config.app)
+    selection_key = google_accounts.USAGES[usage].selection_key
+    current = google_accounts.selected_account(usage, snapshot)
+    options = ["", *google_accounts.account_names(snapshot)]
+    if current not in options:
+        # Keep a stale selection visible so the user can see why generation fails.
+        options.append(current)
+    widget_key = f"{selection_key}_select"
+    default_label = tr("Google Account Default")
+    return container.selectbox(
+        label,
+        options,
+        index=options.index(current),
+        format_func=lambda name: name or default_label,
+        help=tr("Google Account Selector Help"),
+        key=widget_key,
+        on_change=_save_settings_change,
+        args=("app", selection_key, widget_key, lambda value: value),
+    )
+
+
+def _add_google_account():
+    raw_name = st.session_state.get(_GOOGLE_ACCOUNT_NAME_INPUT, "")
+    api_key = str(st.session_state.get(_GOOGLE_ACCOUNT_KEY_INPUT, "") or "").strip()
+    try:
+        name = google_accounts.normalize_name(raw_name)
+        if not api_key:
+            raise google_accounts.GoogleAccountError(tr("Google Account Key Missing"))
+    except google_accounts.GoogleAccountError as exc:
+        st.session_state["google_account_message"] = ("error", str(exc))
+        return
+    names = google_accounts.account_names(config.snapshot_config_with_pending(config.app))
+    _set_runtime_config("app", google_accounts.api_key_config_key(name), api_key)
+    if name not in names:
+        _set_runtime_config("app", google_accounts.ACCOUNTS_KEY, [*names, name])
+    st.session_state[_GOOGLE_ACCOUNT_NAME_INPUT] = ""
+    st.session_state[_GOOGLE_ACCOUNT_KEY_INPUT] = ""
+    st.session_state["google_account_message"] = (
+        "success", tr("Google Account Saved").format(name=name)
+    )
+
+
+def _remove_google_account(name):
+    snapshot = config.snapshot_config_with_pending(config.app)
+    names = [item for item in google_accounts.account_names(snapshot) if item != name]
+    _set_runtime_config("app", google_accounts.ACCOUNTS_KEY, names)
+    _delete_runtime_config("app", google_accounts.api_key_config_key(name))
+    for usage in google_accounts.USAGES:
+        if google_accounts.selected_account(usage, snapshot) == name:
+            _set_runtime_config("app", google_accounts.USAGES[usage].selection_key, "")
+
+
+def _render_google_accounts_manager():
+    """Add, re-key or remove named Google accounts shared by Veo and the Gemini script LLM."""
+    snapshot = config.snapshot_config_with_pending(config.app)
+    with st.expander(tr("Google Accounts"), expanded=not google_accounts.account_names(snapshot)):
+        st.caption(tr("Google Accounts Help"))
+        message = st.session_state.pop("google_account_message", None)
+        if message:
+            getattr(st, message[0])(message[1])
+        for account in google_accounts.list_accounts(snapshot):
+            key_name = google_accounts.api_key_config_key(account.name)
+            key_column, remove_column = st.columns([4, 1], vertical_alignment="bottom")
+            key_column.text_input(
+                tr("Google Account API Key").format(name=account.name),
+                value=account.api_key,
+                type="password",
+                key=f"{key_name}_input",
+                on_change=_save_settings_change,
+                args=("app", key_name, f"{key_name}_input", lambda value: value.strip()),
+            )
+            remove_column.button(
+                tr("Remove Google Account"),
+                key=f"{key_name}_remove",
+                on_click=_remove_google_account,
+                args=(account.name,),
+            )
+        name_column, key_column, add_column = st.columns([2, 3, 1], vertical_alignment="bottom")
+        name_column.text_input(
+            tr("New Google Account Name"), placeholder="personal", key=_GOOGLE_ACCOUNT_NAME_INPUT
+        )
+        key_column.text_input(
+            tr("New Google Account API Key"), type="password", key=_GOOGLE_ACCOUNT_KEY_INPUT
+        )
+        add_column.button(
+            tr("Add Google Account"), key="google_account_add_button", on_click=_add_google_account
+        )
+
+
+def _render_google_veo_provider_settings(app_settings):
+    st.markdown(f"**{tr('Google Veo')}**")
+    st.caption(tr("Google Veo Key Help"))
+    if not _render_google_account_selector("veo", tr("Google Account For Veo")):
+        veo_key = st.text_input(
+            tr("Google Veo API Key"),
+            value=str(app_settings.get("google_veo_api_key", "") or ""),
+            type="password",
+            help=tr("Google Veo API Key Help"),
+            key="google_veo_api_key_input",
+            on_change=_save_settings_change,
+            args=("app", "google_veo_api_key", "google_veo_api_key_input", lambda value: value.strip()),
+        )
+        _set_runtime_config("app", "google_veo_api_key", veo_key.strip())
+    configured_model = str(app_settings.get("google_veo_model", "") or google_veo.DEFAULT_MODEL)
+    options = list(google_veo.MODELS)
+    if configured_model not in options:
+        options.insert(0, configured_model)
+    model = st.selectbox(
+        tr("Google Veo Model"),
+        options,
+        index=options.index(configured_model),
+        format_func=lambda value: google_veo.MODELS.get(value, value),
+        key="google_veo_model_select",
+    )
+    _set_runtime_config("app", "google_veo_model", model)
+    resolutions = list(google_veo.SUPPORTED_RESOLUTIONS)
+    configured_resolution = str(app_settings.get("google_veo_resolution", "") or "720p")
+    if configured_resolution not in resolutions:
+        configured_resolution = "720p"
+    resolution = st.selectbox(
+        tr("Google Veo Resolution"),
+        resolutions,
+        index=resolutions.index(configured_resolution),
+        help=tr("Google Veo Resolution Help"),
+        key="google_veo_resolution_select",
+    )
+    _set_runtime_config("app", "google_veo_resolution", resolution)
+    _render_google_accounts_manager()
 
 
 def _render_infistar_model_selector():
@@ -9255,6 +9417,7 @@ def _render_generation_controls(
             voxcpm_prompt_text = _get_voxcpm_prompt_text()
 
         if params.video_source not in [
+            "google_veo",
             "infistar",
             "jalapeno",
             "pexels",
@@ -9334,6 +9497,21 @@ def _render_generation_controls(
                         != st.session_state.get("jalapeno_charge_signature")):
                     raise jalapeno_video.JalapenoVideoError(tr("Confirm Jalapeno Cloud Charge Required"))
             except jalapeno_video.JalapenoVideoError as exc:
+                _remove_active_generation_task(task_id)
+                st.error(str(exc))
+                st.stop()
+
+        if params.video_source == "google_veo":
+            try:
+                snapshot = config.snapshot_config_with_pending(config.app)
+                if not google_veo.is_enabled(snapshot):
+                    raise google_veo.GoogleVeoError(tr("Google Veo Key Required"))
+                google_veo.model_id(snapshot)
+                if params.video_aspect not in {"16:9", "9:16"}:
+                    raise google_veo.GoogleVeoError(tr("Google Veo Aspect Unsupported"))
+                if not st.session_state.get("google_veo_confirm_charge", False):
+                    raise google_veo.GoogleVeoError(tr("Confirm Google Veo Charge Required"))
+            except google_veo.GoogleVeoError as exc:
                 _remove_active_generation_task(task_id)
                 st.error(str(exc))
                 st.stop()

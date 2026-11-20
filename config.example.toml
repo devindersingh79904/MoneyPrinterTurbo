@@ -84,7 +84,7 @@ tls_verify = true
 
 # Available values: "pexels", "pixabay", "coverr", "wavespeed",
 # "volcengine_seedance", "ofox", "metaso_minimax", "muapi", "loomloom",
-# "openai_image", "infistar", "local".
+# "openai_image", "infistar", "google_veo", "local".
 # "wavespeed" generates brand-new clips with WaveSpeed AI text-to-video models
 # instead of searching stock footage; generation is billed per request.
 # "loomloom" is a paid Shengsuan Cloud source and requires explicit
@@ -282,6 +282,31 @@ infistar_video_base_url = ""
 infistar_video_model = "doubao-seedance-2-0-fast-260128"
 infistar_video_poll_interval = 5
 infistar_video_run_timeout = 1800
+
+# Google Veo text-to-video ("google_veo") through the Gemini API.
+# Needs a Gemini API key with billing enabled: https://aistudio.google.com/app/apikey
+# A Google AI Pro subscription does NOT cover API usage; clips are billed per second.
+# Leave google_veo_api_key empty to reuse gemini_api_key (or GEMINI_API_KEY env).
+# Models: veo-3.1-fast-generate-preview, veo-3.1-generate-preview,
+# veo-3.0-fast-generate-001, veo-3.0-generate-001, veo-2.0-generate-001.
+# Veo 3.x clips are 4, 6 or 8 s (1080p forces 8 s); Veo 2 clips are 5-8 s.
+# Only 16:9 and 9:16 are supported. {term} in the template is the script keyword.
+google_veo_api_key = ""
+google_veo_model = "veo-3.1-fast-generate-preview"
+google_veo_resolution = "720p"
+google_veo_prompt_template = ""
+google_veo_negative_prompt = "text, captions, subtitles, watermark, logo, blurry, distorted"
+google_veo_poll_interval = 10
+google_veo_run_timeout = 1200
+
+# Named Google accounts (optional). Each holds the Gemini API key of a different
+# Google account / Cloud project; Veo and the Gemini script LLM (+ Gemini TTS)
+# pick one each. Leave the selections empty to use the single keys above.
+# google_accounts = ["personal", "work"]
+# google_account_personal_api_key = ""
+# google_account_work_api_key = ""
+# google_veo_account = "work"
+# gemini_account = "personal"
 
 # Jalapeno Cloud: promotion page https://www.jalapeno-cloud.ai/MoneyPrinterTurbo
 # Model marketplace: https://www.jalapeno-cloud.ai/models

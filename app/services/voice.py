@@ -31,7 +31,7 @@ from moviepy.audio.io.AudioFileClip import AudioFileClip
 from openai import OpenAI
 
 from app.config import config
-from app.services import bgm
+from app.services import bgm, google_accounts
 from app.utils import utils
 from app.utils.subtitle_reader import moviepy_subtitles
 from app.utils.subtitle_writer import staged_subtitle_file
@@ -2030,7 +2030,7 @@ def gemini_tts(
     
     temporary_audio = None
     try:
-        api_key = config.app.get("gemini_api_key", "")
+        api_key = google_accounts.resolve_api_key("gemini")
         if not api_key:
             logger.error("Gemini API key is not set")
             return None

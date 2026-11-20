@@ -27,6 +27,7 @@ from app.services import (
     llm,
     loomloom,
     material,
+    google_veo,
     metaso_minimax,
     muapi,
     ofox,
@@ -105,6 +106,7 @@ _SUPPORTED_VIDEO_SOURCES = frozenset({
     "pexels", "pixabay", "coverr", "local", "wavespeed",
     "volcengine_seedance", "ofox", "metaso_minimax", "muapi",
     "loomloom", "openai_image", "codex_image", "infistar", "jalapeno",
+    "google_veo",
 })
 
 
@@ -931,6 +933,14 @@ def get_video_materials(
                 details=details,
             )
             return None
+        except google_veo.GoogleVeoError as exc:
+            # The operation name is the only handle to a paid clip; keep it in task state.
+            remote_task_id = str(exc.task_id or "").strip()
+            _mark_task_failed(
+                task_id, "materials", str(exc),
+                details={"google_veo_operation": remote_task_id} if remote_task_id else None,
+            )
+            return None
         except infistar_video.InfistarVideoError as exc:
             remote_task_id = str(exc.task_id or "").strip()
             _mark_task_failed(
@@ -1648,6 +1658,16 @@ def _run_pipeline(
             if jalapeno_video_endpoint is None:
                 jalapeno_video_endpoint = jalapeno_video.endpoint()
         except jalapeno_video.JalapenoVideoError as exc:
+            return _mark_task_failed(task_id, "preflight", str(exc))
+
+    if stop_at in {"materials", "video"} and params.video_source == "google_veo":
+        try:
+            if not google_veo.get_api_key():
+                raise google_veo.GoogleVeoError(google_veo.MISSING_KEY_MESSAGE)
+            google_veo.model_id()
+            if params.video_aspect not in {"16:9", "9:16"}:
+                raise google_veo.GoogleVeoError("Google Veo supports only 16:9 and 9:16")
+        except google_veo.GoogleVeoError as exc:
             return _mark_task_failed(task_id, "preflight", str(exc))
 
     if stop_at in {"materials", "video"} and params.video_source == "infistar":
